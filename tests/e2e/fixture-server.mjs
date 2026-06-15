@@ -18,6 +18,20 @@ const handleRequest = (request, response) => {
     return;
   }
 
+  if (request.url === "/semantic") {
+    response.end(
+      page(
+        "Semantic",
+        `
+          <p class="log-row spaced">split <span id="split-a">2026-06-15</span><span id="split-b">T08:42:11Z</span> done</p>
+          <p class="log-row spaced">relative <time id="time-el" datetime="2026-03-08T07:00:00Z">2 hours ago</time></p>
+          <p class="log-row spaced" id="multi-row">a <span id="multi-first">2026-06-15T08:00:00Z</span> b <span id="multi-second">2026-06-15T09:30:00Z</span> c</p>
+        `
+      )
+    );
+    return;
+  }
+
   if (request.url === "/huge") {
     const rows = Array.from(
       { length: 100_000 },
@@ -78,6 +92,7 @@ function page(title, body) {
           * { box-sizing: border-box; color: rebeccapurple; font-family: serif !important; }
           body { margin: 40px; font-size: 48px; }
           .log-row, .row { color: #1b261f; font: 14px/1.5 monospace !important; }
+          .spaced { margin: 0 0 220px; }
           iframe { display: block; width: 720px; height: 160px; margin-top: 24px; }
         </style>
       </head>

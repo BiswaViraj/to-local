@@ -126,6 +126,43 @@ test("disabling an origin tears down the overlay in an open tab", async () => {
   }
 });
 
+test("detects split timestamps, <time> elements, and the nearest match", async () => {
+  const context = await launchExtension();
+
+  try {
+    const extensionId = await getExtensionId(context);
+    await setOrigin(context, extensionId, "http://localhost:4173", true);
+    const page = await context.newPage();
+    await page.goto("http://localhost:4173/semantic");
+    await expect(page.locator("tolocal-overlay")).toHaveCount(1);
+
+    const cardText = () =>
+      page.locator("tolocal-overlay").evaluate((host) => {
+        const card = host.shadowRoot?.querySelector(".card");
+        return getComputedStyle(card!).display === "none"
+          ? ""
+          : (card?.querySelector("span:nth-child(2)")?.textContent ?? "");
+      });
+
+    // Rows are spaced far apart in the fixture so the card shown for one hover
+    // never sits under the next teleported hover target.
+
+    // Split across two spans, reconstructed into one value.
+    await page.locator("#split-b").hover();
+    await expect.poll(cardText).toBe("2026-06-15T08:42:11Z");
+
+    // <time datetime> wins over the visible "2 hours ago" label.
+    await page.locator("#time-el").hover();
+    await expect.poll(cardText).toBe("2026-03-08T07:00:00Z");
+
+    // Nearest of two timestamps on one line.
+    await page.locator("#multi-second").hover();
+    await expect.poll(cardText).toBe("2026-06-15T09:30:00Z");
+  } finally {
+    await context.close();
+  }
+});
+
 test("persists registration across a browser restart", async () => {
   const userDataDir = await mkdtemp(path.join(tmpdir(), "tolocal-e2e-"));
   let context = await launchExtension(userDataDir);

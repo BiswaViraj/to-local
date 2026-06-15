@@ -1,11 +1,33 @@
 import { type ContentScriptContext } from "wxt/utils/content-script-context";
 import { runWhileOriginEnabled } from "../src/runtime/activation";
 import { normalizeOrigin } from "../src/runtime/origins";
+import { parseTimestamp } from "../src/parsing/parse";
+import type { ParsedTimestamp } from "../src/parsing/types";
+import {
+  findTimestamps,
+  nearestTimestamp,
+  type TextMatch
+} from "../src/detection/scan";
+import {
+  collectInlineText,
+  findTimeAncestor,
+  rangeFromSegments
+} from "../src/detection/dom";
 
 const BOUNDED_TEXT_RADIUS = 180;
 const DWELL_MS = 120;
-const TIMESTAMP_CANDIDATE =
-  /(?:\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:?\d{2}|[ ](?:UTC|GMT))|(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),? [^\n]{6,40}(?:GMT|UTC|[+-]\d{4})|\d{2}\/[A-Z][a-z]{2}\/\d{4}:\d{2}:\d{2}:\d{2} [+-]\d{4})/g;
+const MAX_CARET_DISTANCE = 2;
+
+interface DetectedTimestamp {
+  source: string;
+  parsed: ParsedTimestamp;
+  rect: DOMRect;
+}
+
+// Per-text-node cache of scan results. Keyed by the live node (so it is GC'd
+// with the node) and storing only short match data plus a length signature, so
+// large page text is never retained.
+const scanCache = new WeakMap<Text, { length: number; matches: TextMatch[] }>();
 
 interface MountedOverlay {
   card: HTMLDivElement;
@@ -189,43 +211,109 @@ async function mountOverlay(ctx: ContentScriptContext): Promise<() => void> {
 function resolveTimestampAtPoint(
   x: number,
   y: number
-): { source: string; rect: DOMRect } | null {
+): DetectedTimestamp | null {
   const caret = getCaretLocation(x, y);
   if (!caret) {
     return null;
   }
 
-  const text = caret.node.data;
-  const windowStart = Math.max(0, caret.offset - BOUNDED_TEXT_RADIUS);
-  const windowEnd = Math.min(text.length, caret.offset + BOUNDED_TEXT_RADIUS);
-  const boundedText = text.slice(windowStart, windowEnd);
-  const localOffset = caret.offset - windowStart;
-  const candidates = [...boundedText.matchAll(TIMESTAMP_CANDIDATE)];
-  const nearest = candidates
-    .map((candidate) => ({
-      candidate,
-      distance: distanceFromRange(
-        localOffset,
-        candidate.index,
-        candidate.index + candidate[0].length
-      )
-    }))
-    .sort((left, right) => left.distance - right.distance)[0];
-
-  if (!nearest || nearest.distance > 3) {
-    return null;
+  // 1. A semantic <time datetime> ancestor wins, even when the visible text is
+  // a human label such as "2 hours ago".
+  const timeAncestor = findTimeAncestor(caret.node);
+  if (timeAncestor) {
+    const parsed = parseTimestamp(timeAncestor.datetime);
+    if (parsed) {
+      return {
+        source: timeAncestor.datetime,
+        parsed,
+        rect: timeAncestor.element.getBoundingClientRect()
+      };
+    }
   }
 
-  const start = windowStart + nearest.candidate.index;
-  const end = start + nearest.candidate[0].length;
-  const range = document.createRange();
-  range.setStart(caret.node, start);
-  range.setEnd(caret.node, end);
+  // 2. Fast path: the caret's own text node, cached.
+  const single = nearestInNode(caret.node, caret.offset);
+  if (single) {
+    const range = document.createRange();
+    range.setStart(caret.node, single.start);
+    range.setEnd(caret.node, single.end);
+    return {
+      source: single.source,
+      parsed: single.parsed,
+      rect: range.getBoundingClientRect()
+    };
+  }
 
+  // 3. Fallback: reconstruct across adjacent inline nodes for split timestamps.
+  const bounded = collectInlineText(
+    caret.node,
+    caret.offset,
+    BOUNDED_TEXT_RADIUS
+  );
+  const match = nearestTimestamp(bounded.text, bounded.offset);
+  if (!match || caretDistance(bounded.offset, match) > MAX_CARET_DISTANCE) {
+    return null;
+  }
+  const range = rangeFromSegments(bounded.segments, match.start, match.end);
+  if (!range) {
+    return null;
+  }
   return {
-    source: nearest.candidate[0],
+    source: match.source,
+    parsed: match.parsed,
     rect: range.getBoundingClientRect()
   };
+}
+
+function nearestInNode(node: Text, offset: number): TextMatch | null {
+  const data = node.data;
+
+  // Very large single nodes: scan only a bounded window, never cached.
+  if (data.length > 4000) {
+    const windowStart = Math.max(0, offset - BOUNDED_TEXT_RADIUS);
+    const slice = data.slice(windowStart, offset + BOUNDED_TEXT_RADIUS);
+    const localOffset = offset - windowStart;
+    const match = nearestTimestamp(slice, localOffset);
+    if (!match || caretDistance(localOffset, match) > MAX_CARET_DISTANCE) {
+      return null;
+    }
+    return {
+      ...match,
+      start: match.start + windowStart,
+      end: match.end + windowStart
+    };
+  }
+
+  const cached = scanCache.get(node);
+  let matches: TextMatch[];
+  if (cached && cached.length === data.length) {
+    matches = cached.matches;
+  } else {
+    matches = findTimestamps(data);
+    scanCache.set(node, { length: data.length, matches });
+  }
+
+  let best: TextMatch | null = null;
+  let bestDistance = Infinity;
+  for (const match of matches) {
+    const distance = caretDistance(offset, match);
+    if (distance < bestDistance) {
+      best = match;
+      bestDistance = distance;
+    }
+  }
+  return best && bestDistance <= MAX_CARET_DISTANCE ? best : null;
+}
+
+function caretDistance(
+  offset: number,
+  match: { start: number; end: number }
+): number {
+  return offset < match.start
+    ? match.start - offset
+    : offset > match.end
+      ? offset - match.end
+      : 0;
 }
 
 function getCaretLocation(x: number, y: number): CaretLocation | null {
@@ -249,16 +337,6 @@ function getCaretLocation(x: number, y: number): CaretLocation | null {
   }
 
   return null;
-}
-
-function distanceFromRange(point: number, start: number, end: number): number {
-  if (point < start) {
-    return start - point;
-  }
-  if (point > end) {
-    return point - end;
-  }
-  return 0;
 }
 
 function positionCard(card: HTMLDivElement, rect: DOMRect): void {
