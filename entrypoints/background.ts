@@ -40,8 +40,31 @@ export default defineBackground(() => {
     }
   );
 
+  // The keyboard command converts the current selection. Forward it to the
+  // active tab; the frame that holds the selection acts, the rest ignore it.
+  browser.commands.onCommand.addListener((command) => {
+    if (command === "convert-selection") {
+      void forwardConvertSelection();
+    }
+  });
+
   void reconcileRuntimeState();
 });
+
+async function forwardConvertSelection(): Promise<void> {
+  const [tab] = await browser.tabs.query({
+    active: true,
+    currentWindow: true
+  });
+  if (tab?.id === undefined) {
+    return;
+  }
+  try {
+    await browser.tabs.sendMessage(tab.id, { type: "convert-selection" });
+  } catch {
+    // No content script on this tab (origin not enabled). Nothing to do.
+  }
+}
 
 async function handleRequest(
   request: RuntimeRequest

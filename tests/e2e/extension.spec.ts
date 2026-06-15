@@ -141,7 +141,7 @@ test("detects split timestamps, <time> elements, and the nearest match", async (
         const card = host.shadowRoot?.querySelector(".card");
         return getComputedStyle(card!).display === "none"
           ? ""
-          : (card?.querySelector("span:nth-child(2)")?.textContent ?? "");
+          : (card?.querySelector(".source-value")?.textContent ?? "");
       });
 
     // Rows are spaced far apart in the fixture so the card shown for one hover
@@ -158,6 +158,61 @@ test("detects split timestamps, <time> elements, and the nearest match", async (
     // Nearest of two timestamps on one line.
     await page.locator("#multi-second").hover();
     await expect.poll(cardText).toBe("2026-06-15T09:30:00Z");
+  } finally {
+    await context.close();
+  }
+});
+
+test("converts the current selection into a pinned card", async () => {
+  const context = await launchExtension();
+
+  try {
+    const extensionId = await getExtensionId(context);
+    await setOrigin(context, extensionId, "http://localhost:4173", true);
+    const page = await context.newPage();
+    await page.goto("http://localhost:4173");
+    await expect(page.locator("tolocal-overlay")).toHaveCount(1);
+
+    await page.evaluate(() => {
+      const node = document.getElementById("top-timestamp")!;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const selection = window.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+    });
+
+    // Drive the same message the Ctrl/Cmd+Shift+L command dispatches.
+    const worker = await getServiceWorker(context);
+    await worker.evaluate(async () => {
+      const api = (
+        globalThis as unknown as {
+          chrome: {
+            tabs: {
+              query(q: object): Promise<Array<{ id?: number; url?: string }>>;
+              sendMessage(id: number, message: unknown): Promise<void>;
+            };
+          };
+        }
+      ).chrome;
+      const tabs = await api.tabs.query({});
+      const tab = tabs.find((t) => t.url?.includes("localhost:4173"));
+      if (tab?.id !== undefined) {
+        await api.tabs.sendMessage(tab.id, { type: "convert-selection" });
+      }
+    });
+
+    const host = page.locator("tolocal-overlay");
+    await expect
+      .poll(() =>
+        host.evaluate(
+          (h) => h.shadowRoot?.querySelector(".source-value")?.textContent ?? ""
+        )
+      )
+      .toBe("2026-06-15T08:42:11.123456789Z");
+    // The converted local time is shown and the card is pinned with actions.
+    await expect(host.locator(".local")).not.toBeEmpty();
+    await expect(host.locator(".copy").first()).toBeVisible();
   } finally {
     await context.close();
   }
@@ -274,7 +329,9 @@ for (const origin of [
 
       const host = page.locator("tolocal-overlay");
       await expect(host).toHaveCount(1);
-      await host.locator(".copy").click();
+      // Copy actions appear once the card is pinned by clicking it.
+      await host.locator(".card").click();
+      await host.locator(".copy").first().click();
       await expect(host.locator(".status")).toContainText(/Copied/);
     } finally {
       await context.close();
