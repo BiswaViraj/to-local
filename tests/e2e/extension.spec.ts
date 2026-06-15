@@ -107,6 +107,25 @@ test("reconciles full origins, permissions, frames, and runtime registration", a
   }
 });
 
+test("disabling an origin tears down the overlay in an open tab", async () => {
+  const context = await launchExtension();
+
+  try {
+    const extensionId = await getExtensionId(context);
+    await setOrigin(context, extensionId, "http://localhost:4173", true);
+
+    const page = await context.newPage();
+    await page.goto("http://localhost:4173");
+    await expect(page.locator("tolocal-overlay")).toHaveCount(1);
+
+    // Disabling from the popup must deactivate the open tab with no reload.
+    await setOrigin(context, extensionId, "http://localhost:4173", false);
+    await expect(page.locator("tolocal-overlay")).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});
+
 test("persists registration across a browser restart", async () => {
   const userDataDir = await mkdtemp(path.join(tmpdir(), "tolocal-e2e-"));
   let context = await launchExtension(userDataDir);

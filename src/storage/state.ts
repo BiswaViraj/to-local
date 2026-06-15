@@ -115,6 +115,16 @@ export function migrateState(
   };
 }
 
+// Reads and migrates state without writing anything. The content script uses
+// this so injection into a page never mutates storage.
+export async function readState(): Promise<StoredStateV1> {
+  const stored = await browser.storage.local.get([
+    STATE_KEY,
+    LEGACY_ORIGINS_KEY
+  ]);
+  return migrateState(stored[STATE_KEY], stored[LEGACY_ORIGINS_KEY]);
+}
+
 export async function loadState(): Promise<StoredStateV1> {
   const stored = await browser.storage.local.get([
     STATE_KEY,

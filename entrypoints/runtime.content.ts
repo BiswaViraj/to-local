@@ -1,4 +1,5 @@
-import { loadState } from "../src/storage/state";
+import { type ContentScriptContext } from "wxt/utils/content-script-context";
+import { runWhileOriginEnabled } from "../src/runtime/activation";
 import { normalizeOrigin } from "../src/runtime/origins";
 
 const BOUNDED_TEXT_RADIUS = 180;
@@ -26,16 +27,33 @@ export default defineContentScript({
   noScriptStartedPostMessage: true,
   async main(ctx) {
     const origin = normalizeOrigin(location.origin);
-    if (!origin || !(await isOriginEnabled(origin))) {
+    if (!origin) {
       return;
     }
 
-    const ui = await createShadowRootUi<MountedOverlay>(ctx, {
-      name: "tolocal-overlay",
-      position: "overlay",
-      zIndex: 2_147_483_647,
-      isolateEvents: true,
-      css: `
+    // Mount only while this exact origin is enabled. Disabling it from the
+    // popup tears the overlay down in open tabs immediately, without a reload.
+    let teardown: (() => void) | null = null;
+    const stop = await runWhileOriginEnabled(origin, {
+      activate: async () => {
+        teardown = await mountOverlay(ctx);
+      },
+      deactivate: () => {
+        teardown?.();
+        teardown = null;
+      }
+    });
+    ctx.onInvalidated(stop);
+  }
+});
+
+async function mountOverlay(ctx: ContentScriptContext): Promise<() => void> {
+  const ui = await createShadowRootUi<MountedOverlay>(ctx, {
+    name: "tolocal-overlay",
+    position: "overlay",
+    zIndex: 2_147_483_647,
+    isolateEvents: true,
+    css: `
         :host {
           pointer-events: none;
         }
@@ -83,97 +101,89 @@ export default defineContentScript({
           margin-top: 5px;
         }
       `,
-      onMount(container) {
-        const card = document.createElement("div");
-        const label = document.createElement("span");
-        const source = document.createElement("span");
-        const copy = document.createElement("button");
-        const status = document.createElement("span");
+    onMount(container) {
+      const card = document.createElement("div");
+      const label = document.createElement("span");
+      const source = document.createElement("span");
+      const copy = document.createElement("button");
+      const status = document.createElement("span");
 
-        card.className = "card";
-        card.setAttribute("role", "tooltip");
-        label.className = "label";
-        label.textContent = "toLocal";
-        copy.className = "copy";
-        copy.type = "button";
-        copy.textContent = "Copy";
-        status.className = "status";
-        status.setAttribute("role", "status");
-        card.append(label, source, copy, status);
-        container.append(card);
+      card.className = "card";
+      card.setAttribute("role", "tooltip");
+      label.className = "label";
+      label.textContent = "toLocal";
+      copy.className = "copy";
+      copy.type = "button";
+      copy.textContent = "Copy";
+      status.className = "status";
+      status.setAttribute("role", "status");
+      card.append(label, source, copy, status);
+      container.append(card);
 
-        copy.addEventListener("click", async () => {
-          const result = await copyText(source.textContent ?? "");
-          status.textContent = result;
-        });
+      copy.addEventListener("click", async () => {
+        const result = await copyText(source.textContent ?? "");
+        status.textContent = result;
+      });
 
-        return { card, copy, source, status };
-      }
-    });
+      return { card, copy, source, status };
+    }
+  });
 
-    ui.mount();
+  ui.mount();
 
-    let frameRequest: number | null = null;
-    let dwellTimer: number | null = null;
-    let lastPoint = { x: 0, y: 0 };
+  let frameRequest: number | null = null;
+  let dwellTimer: number | null = null;
+  let lastPoint = { x: 0, y: 0 };
 
-    const hide = (): void => {
-      if (ui.mounted) {
-        ui.mounted.card.style.display = "none";
-      }
-    };
+  const hide = (): void => {
+    if (ui.mounted) {
+      ui.mounted.card.style.display = "none";
+    }
+  };
 
-    const inspectPoint = (): void => {
-      frameRequest = null;
-      if (dwellTimer !== null) {
-        window.clearTimeout(dwellTimer);
-      }
-      dwellTimer = window.setTimeout(() => {
-        dwellTimer = null;
-        const match = resolveTimestampAtPoint(lastPoint.x, lastPoint.y);
-        if (!match || !ui.mounted) {
-          hide();
-          return;
-        }
-
-        ui.mounted.source.textContent = match.source;
-        ui.mounted.status.textContent = "";
-        positionCard(ui.mounted.card, match.rect);
-      }, DWELL_MS);
-    };
-
-    const onPointerMove = (event: PointerEvent): void => {
-      if (event.composedPath().includes(ui.shadowHost)) {
+  const inspectPoint = (): void => {
+    frameRequest = null;
+    if (dwellTimer !== null) {
+      window.clearTimeout(dwellTimer);
+    }
+    dwellTimer = window.setTimeout(() => {
+      dwellTimer = null;
+      const match = resolveTimestampAtPoint(lastPoint.x, lastPoint.y);
+      if (!match || !ui.mounted) {
+        hide();
         return;
       }
-      lastPoint = { x: event.clientX, y: event.clientY };
-      if (frameRequest === null) {
-        frameRequest = window.requestAnimationFrame(inspectPoint);
-      }
-    };
 
-    document.addEventListener("pointermove", onPointerMove, {
-      passive: true
-    });
-    document.addEventListener("pointerleave", hide, { passive: true });
+      ui.mounted.source.textContent = match.source;
+      ui.mounted.status.textContent = "";
+      positionCard(ui.mounted.card, match.rect);
+    }, DWELL_MS);
+  };
 
-    ctx.onInvalidated(() => {
-      if (frameRequest !== null) {
-        window.cancelAnimationFrame(frameRequest);
-      }
-      if (dwellTimer !== null) {
-        window.clearTimeout(dwellTimer);
-      }
-      document.removeEventListener("pointermove", onPointerMove);
-      document.removeEventListener("pointerleave", hide);
-      ui.remove();
-    });
-  }
-});
+  const onPointerMove = (event: PointerEvent): void => {
+    if (event.composedPath().includes(ui.shadowHost)) {
+      return;
+    }
+    lastPoint = { x: event.clientX, y: event.clientY };
+    if (frameRequest === null) {
+      frameRequest = window.requestAnimationFrame(inspectPoint);
+    }
+  };
 
-async function isOriginEnabled(origin: string): Promise<boolean> {
-  const state = await loadState();
-  return state.enabledOrigins.includes(origin);
+  document.addEventListener("pointermove", onPointerMove, { passive: true });
+  document.addEventListener("pointerleave", hide, { passive: true });
+
+  return () => {
+    if (frameRequest !== null) {
+      window.cancelAnimationFrame(frameRequest);
+    }
+    if (dwellTimer !== null) {
+      window.clearTimeout(dwellTimer);
+    }
+    document.removeEventListener("pointermove", onPointerMove);
+    document.removeEventListener("pointerleave", hide);
+    ui.remove();
+  };
 }
 
 function resolveTimestampAtPoint(
