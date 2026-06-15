@@ -1,0 +1,30 @@
+{
+  "name": "to-local",
+  "version": "0.0.1-alpha.0",
+  "private": true,
+  "description": "Privacy-first Chrome extension for on-demand web timestamp conversion.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
+  "packageManager": "pnpm@10.32.1",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "postinstall": "wxt prepare",
+    "test:e2e": "TOLOCAL_E2E=1 wxt build && playwright test",
+    "test:permissions": "wxt build && node tests/manual/permission-flow.mjs",
+    "typecheck": "wxt prepare && tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.59.1",
+    "@types/chrome": "^0.1.31",
+    "selfsigned": "^5.5.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.4",
+    "wxt": "^0.20.26"
+  }
+}

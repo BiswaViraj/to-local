@@ -1,0 +1,34 @@
+name: Timestamp parsing report
+description: Report a missed, rejected, or incorrectly converted timestamp.
+title: "[Parser]: "
+labels:
+  - parser
+body:
+  - type: input
+    id: value
+    attributes:
+      label: Timestamp value
+      description: Use synthetic data if the original value is sensitive.
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options:
+        - Not recognized
+        - Incorrect conversion
+        - Incorrectly recognized
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Minimal HTML or text context
+

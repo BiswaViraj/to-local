@@ -1,0 +1,275 @@
+import { chromium, expect, test, type BrowserContext } from "@playwright/test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+const extensionPath = path.resolve(".output/chrome-mv3");
+
+test("reconciles full origins, permissions, frames, and runtime registration", async () => {
+  const context = await launchExtension();
+
+  try {
+    const page = await context.newPage();
+    await page.goto("http://localhost:4173");
+
+    const extensionId = await getExtensionId(context);
+    await setOrigin(context, extensionId, "http://localhost:4173", true);
+    await page.reload();
+
+    await expect(page.locator("tolocal-overlay")).toHaveCount(1);
+    await expect(
+      page
+        .frameLocator('iframe[title="same-origin"]')
+        .locator("tolocal-overlay")
+    ).toHaveCount(1);
+    await expect(
+      page
+        .frameLocator('iframe[title="cross-origin"]')
+        .locator("tolocal-overlay")
+    ).toHaveCount(0);
+
+    await page.locator("#top-timestamp").hover();
+    await expect
+      .poll(() =>
+        page.locator("tolocal-overlay").evaluate((host) => {
+          const shadow = host.shadowRoot;
+          return shadow?.querySelector(".card")?.textContent ?? "";
+        })
+      )
+      .toContain("2026-06-15T08:42:11.123456789Z");
+
+    const cardGeometry = await page
+      .locator("tolocal-overlay")
+      .evaluate((host) => {
+        const card = host.shadowRoot?.querySelector(".card");
+        if (!card) {
+          return null;
+        }
+        const rect = card.getBoundingClientRect();
+        return rect
+          ? {
+              width: rect.width,
+              top: rect.top,
+              left: rect.left,
+              display: getComputedStyle(card).display
+            }
+          : null;
+      });
+    expect(cardGeometry?.display).toBe("block");
+    expect(cardGeometry?.width).toBeGreaterThan(100);
+    expect(cardGeometry?.left).toBeGreaterThanOrEqual(0);
+    expect(cardGeometry?.top).toBeGreaterThanOrEqual(0);
+
+    await setOrigin(context, extensionId, "http://localhost:4174", true);
+    await page.reload();
+    await expect(
+      page
+        .frameLocator('iframe[title="cross-origin"]')
+        .locator("tolocal-overlay")
+    ).toHaveCount(1);
+
+    await setOrigin(context, extensionId, "http://localhost:4173", false);
+    await page.reload();
+    await expect(page.locator("tolocal-overlay")).toHaveCount(0);
+    await expect(
+      page
+        .frameLocator('iframe[title="cross-origin"]')
+        .locator("tolocal-overlay")
+    ).toHaveCount(1);
+
+    await setOrigin(context, extensionId, "http://localhost:4174", false);
+    const serviceWorker = await getServiceWorker(context);
+    const state = await serviceWorker.evaluate(async () => {
+      const api = (globalThis as unknown as {
+        chrome: {
+          permissions: {
+            contains(details: { origins: string[] }): Promise<boolean>;
+          };
+          scripting: {
+            getRegisteredContentScripts(): Promise<unknown[]>;
+          };
+        };
+      }).chrome;
+
+      return {
+        registered: await api.scripting.getRegisteredContentScripts(),
+        granted: await api.permissions.contains({
+          origins: ["http://localhost/*"]
+        })
+      };
+    });
+    expect(state.registered).toEqual([]);
+    expect(state.granted).toBe(true);
+  } finally {
+    await context.close();
+  }
+});
+
+test("persists registration across a browser restart", async () => {
+  const userDataDir = await mkdtemp(path.join(tmpdir(), "tolocal-e2e-"));
+  let context = await launchExtension(userDataDir);
+
+  try {
+    const extensionId = await getExtensionId(context);
+    await setOrigin(context, extensionId, "http://localhost:4173", true);
+    await context.close();
+
+    context = await launchExtension(userDataDir);
+    const serviceWorker = await getServiceWorker(context);
+    await expect
+      .poll(async () =>
+        serviceWorker.evaluate(async () => {
+          const api = (globalThis as unknown as {
+            chrome: {
+              scripting: {
+                getRegisteredContentScripts(): Promise<
+                  Array<{ id: string; persistAcrossSessions?: boolean }>
+                >;
+              };
+            };
+          }).chrome;
+          return api.scripting.getRegisteredContentScripts();
+        })
+      )
+      .toEqual([
+        expect.objectContaining({
+          id: "tolocal-runtime",
+          persistAcrossSessions: true
+        })
+      ]);
+
+    const page = await context.newPage();
+    await page.goto("http://localhost:4173");
+    await expect(page.locator("tolocal-overlay")).toHaveCount(1);
+  } finally {
+    await context.close();
+    await rm(userDataDir, { recursive: true, force: true });
+  }
+});
+
+test("does not scan or wrap a 100,000-line fixture", async () => {
+  const context = await launchExtension();
+
+  try {
+    const extensionId = await getExtensionId(context);
+    await setOrigin(context, extensionId, "http://localhost:4173", true);
+    const page = await context.newPage();
+    await page.goto("http://localhost:4173/huge");
+    await expect(page.locator("tolocal-overlay")).toHaveCount(1);
+    await expect(page.locator(".row")).toHaveCount(100_000);
+
+    const result = await page.evaluate(async () => {
+      const longTasks: number[] = [];
+      const observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          longTasks.push(entry.duration);
+        }
+      });
+      observer.observe({ type: "longtask", buffered: false });
+
+      const start = performance.now();
+      for (let index = 0; index < 1_000; index += 1) {
+        document.dispatchEvent(
+          new PointerEvent("pointermove", {
+            clientX: 10 + (index % 20),
+            clientY: 10 + (index % 20)
+          })
+        );
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+      observer.disconnect();
+
+      return {
+        elapsed: performance.now() - start,
+        longTasks,
+        extensionHosts: document.querySelectorAll("tolocal-overlay")
+          .length,
+        timestampWrappers: document.querySelectorAll(
+          "[data-tolocal-timestamp]"
+        ).length
+      };
+    });
+
+    expect(result.extensionHosts).toBe(1);
+    expect(result.timestampWrappers).toBe(0);
+    expect(result.longTasks).toEqual([]);
+    expect(result.elapsed).toBeLessThan(500);
+  } finally {
+    await context.close();
+  }
+});
+
+for (const origin of [
+  "http://localhost:4173",
+  "http://tolocal.test:4173",
+  "https://localhost:4175"
+]) {
+  test(`copies from the overlay without clipboard permission on ${origin}`, async () => {
+    const context = await launchExtension();
+
+    try {
+      const extensionId = await getExtensionId(context);
+      await setOrigin(context, extensionId, origin, true);
+      const page = await context.newPage();
+      await page.goto(origin);
+      await page.locator("#top-timestamp").hover();
+
+      const host = page.locator("tolocal-overlay");
+      await expect(host).toHaveCount(1);
+      await host.locator(".copy").click();
+      await expect(host.locator(".status")).toContainText(/Copied/);
+    } finally {
+      await context.close();
+    }
+  });
+}
+
+async function launchExtension(userDataDir = ""): Promise<BrowserContext> {
+  return chromium.launchPersistentContext(userDataDir, {
+    channel: "chromium",
+    headless: true,
+    ignoreHTTPSErrors: true,
+    args: [
+      `--disable-extensions-except=${extensionPath}`,
+      `--load-extension=${extensionPath}`,
+      "--host-resolver-rules=MAP tolocal.test 127.0.0.1"
+    ]
+  });
+}
+
+async function getServiceWorker(context: BrowserContext) {
+  return (
+    context.serviceWorkers()[0] ??
+    (await context.waitForEvent("serviceworker"))
+  );
+}
+
+async function getExtensionId(context: BrowserContext): Promise<string> {
+  const worker = await getServiceWorker(context);
+  return new URL(worker.url()).host;
+}
+
+async function setOrigin(
+  context: BrowserContext,
+  extensionId: string,
+  origin: string,
+  enabled: boolean
+): Promise<void> {
+  const popup = await context.newPage();
+  await popup.goto(
+    `chrome-extension://${extensionId}/popup.html?origin=${encodeURIComponent(origin)}`
+  );
+
+  const expectedLabel = enabled ? "Enable this origin" : "Disable this origin";
+  await expect(popup.locator("#toggle")).toHaveText(expectedLabel);
+  await popup.locator("#toggle").click();
+
+  if (enabled) {
+    await expect
+      .poll(() => popup.locator("#status").textContent())
+      .toMatch(/Host permission granted|Origin enabled/);
+  } else {
+    await expect(popup.locator("#toggle")).toHaveText("Enable this origin");
+  }
+  await popup.close();
+}

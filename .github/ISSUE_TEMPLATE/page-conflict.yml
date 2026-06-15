@@ -1,0 +1,27 @@
+name: Page compatibility report
+description: Report an interaction, styling, frame, or performance conflict.
+title: "[Compatibility]: "
+labels:
+  - compatibility
+body:
+  - type: textarea
+    id: page
+    attributes:
+      label: Page type and minimal fixture
+      description: Do not submit private URLs or page content.
+    validations:
+      required: true
+  - type: textarea
+    id: conflict
+    attributes:
+      label: Conflict
+      description: Describe the affected page interaction or performance.
+    validations:
+      required: true
+  - type: input
+    id: chrome
+    attributes:
+      label: Chrome version
+    validations:
+      required: true
+
