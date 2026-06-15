@@ -339,6 +339,89 @@ for (const origin of [
   });
 }
 
+test("options page persists preferences and manages origins", async () => {
+  const context = await launchExtension();
+
+  try {
+    const extensionId = await getExtensionId(context);
+    // Enable an origin through the working popup flow so the options page has a
+    // site to list and remove.
+    await setOrigin(context, extensionId, "http://localhost:4173", true);
+
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/options.html`);
+
+    await page.getByRole("button", { name: "Dark" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+    await page.getByRole("button", { name: "Fixed zone" }).click();
+    await page.getByLabel("Search timezones").fill("Tokyo");
+    await page.getByRole("button", { name: /Asia\/Tokyo/ }).click();
+
+    // Preferences survive a reload.
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Dark" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    await expect(
+      page.getByRole("button", { name: "Fixed zone" })
+    ).toHaveAttribute("aria-pressed", "true");
+
+    // Reject an invalid origin.
+    await page.getByLabel("Add an origin").fill("not a url");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(page.getByText(/full http\(s\) origin/)).toBeVisible();
+
+    // The enabled origin is listed and can be removed.
+    await expect(
+      page.getByText("http://localhost:4173", { exact: true })
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Remove" }).click();
+    await expect(
+      page.getByText("http://localhost:4173", { exact: true })
+    ).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});
+
+test("onboarding converts samples and remembers completion", async () => {
+  const context = await launchExtension();
+
+  try {
+    const extensionId = await getExtensionId(context);
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/onboarding.html`);
+
+    await page.getByRole("button", { name: "2026-06-15T08:42:11Z" }).click();
+    await expect(page.getByRole("button", { name: "Copy ISO" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Got it" }).click();
+
+    const worker = await getServiceWorker(context);
+    const completed = await worker.evaluate(async () => {
+      const api = (
+        globalThis as unknown as {
+          chrome: {
+            storage: {
+              local: { get(key: string): Promise<Record<string, unknown>> };
+            };
+          };
+        }
+      ).chrome;
+      const stored = await api.storage.local.get("toLocal:state");
+      const state = stored["toLocal:state"] as {
+        onboarding?: { completed?: boolean };
+      };
+      return state?.onboarding?.completed;
+    });
+    expect(completed).toBe(true);
+  } finally {
+    await context.close();
+  }
+});
+
 async function launchExtension(userDataDir = ""): Promise<BrowserContext> {
   return chromium.launchPersistentContext(userDataDir, {
     channel: "chromium",

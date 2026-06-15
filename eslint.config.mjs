@@ -32,7 +32,12 @@ export default tseslint.config(
   {
     files: ["**/*.tsx"],
     plugins: { "react-hooks": reactHooks },
-    rules: reactHooks.configs.recommended.rules
+    rules: {
+      ...reactHooks.configs.recommended.rules,
+      // Extension pages load their state from chrome.storage on mount; setting
+      // state after that async read is the intended pattern here.
+      "react-hooks/set-state-in-effect": "off"
+    }
   },
   {
     // Node tooling and manual scripts: Node + browser globals, free to log.

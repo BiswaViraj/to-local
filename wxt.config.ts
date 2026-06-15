@@ -8,7 +8,10 @@ export default defineConfig({
   // script stays framework-free and is guarded by scripts/check-bundle.mjs.
   modules: ["@wxt-dev/module-react"],
   vite: () => ({
-    plugins: [tailwindcss()]
+    plugins: [tailwindcss()],
+    define: {
+      __TOLOCAL_E2E__: JSON.stringify(isE2eBuild)
+    }
   }),
   manifest: {
     name: "toLocal: Local Time for Web Timestamps",

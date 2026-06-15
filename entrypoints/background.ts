@@ -12,9 +12,16 @@ import {
 } from "../src/runtime/origins";
 import { getEnabledOrigins, setEnabledOrigins } from "../src/runtime/storage";
 
+declare const __TOLOCAL_E2E__: boolean;
+
 export default defineBackground(() => {
-  browser.runtime.onInstalled.addListener(() => {
+  browser.runtime.onInstalled.addListener((details) => {
     void reconcileRuntimeState();
+    if (details.reason === "install" && !__TOLOCAL_E2E__) {
+      void browser.tabs.create({
+        url: browser.runtime.getURL("/onboarding.html")
+      });
+    }
   });
 
   browser.runtime.onStartup.addListener(() => {
@@ -103,9 +110,7 @@ async function handleRequest(
 
     return {
       ok: true,
-      message: request.enabled
-        ? "Origin enabled. Reload open pages to exercise persistent injection."
-        : "Origin disabled."
+      message: request.enabled ? "Origin enabled." : "Origin disabled."
     };
   } catch (error) {
     return {
