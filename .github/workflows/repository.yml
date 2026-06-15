@@ -51,6 +51,8 @@ jobs:
         run: pnpm build
       - name: Content-script bundle budget
         run: pnpm check:bundle
+      - name: Production build hygiene
+        run: pnpm check:dist
       - name: Browser tests
         run: pnpm test:e2e
       - name: Package extension

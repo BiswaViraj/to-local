@@ -23,8 +23,9 @@
     "format:check": "prettier --check .",
     "check:bundle": "node scripts/check-bundle.mjs",
     "check:contrast": "node scripts/check-contrast.mjs",
+    "check:dist": "node scripts/check-dist.mjs",
     "icons": "node scripts/render-icons.mjs",
-    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm check:contrast && pnpm build && pnpm check:bundle"
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm check:contrast && pnpm build && pnpm check:bundle && pnpm check:dist"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
