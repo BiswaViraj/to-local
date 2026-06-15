@@ -20,4 +20,3 @@ export function originToMatchPattern(origin: string): string {
 export function uniqueMatchPatterns(origins: readonly string[]): string[] {
   return [...new Set(origins.map(originToMatchPattern))].sort();
 }
-

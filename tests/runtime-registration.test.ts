@@ -10,4 +10,3 @@ describe("runtime registration contract", () => {
     expect(CONTENT_SCRIPT_FILE).toBe("content-scripts/runtime.js");
   });
 });
-

@@ -1,4 +1,4 @@
-import { STORAGE_KEY } from "../src/runtime/contracts";
+import { loadState } from "../src/storage/state";
 import { normalizeOrigin } from "../src/runtime/origins";
 
 const BOUNDED_TEXT_RADIUS = 180;
@@ -172,9 +172,8 @@ export default defineContentScript({
 });
 
 async function isOriginEnabled(origin: string): Promise<boolean> {
-  const stored = await browser.storage.local.get(STORAGE_KEY);
-  const enabledOrigins = stored[STORAGE_KEY];
-  return Array.isArray(enabledOrigins) && enabledOrigins.includes(origin);
+  const state = await loadState();
+  return state.enabledOrigins.includes(origin);
 }
 
 function resolveTimestampAtPoint(
@@ -242,11 +241,7 @@ function getCaretLocation(x: number, y: number): CaretLocation | null {
   return null;
 }
 
-function distanceFromRange(
-  point: number,
-  start: number,
-  end: number
-): number {
+function distanceFromRange(point: number, start: number, end: number): number {
   if (point < start) {
     return start - point;
   }
@@ -271,10 +266,7 @@ function positionCard(card: HTMLDivElement, rect: DOMRect): void {
   const top =
     preferredTop >= gap
       ? preferredTop
-      : Math.min(
-          rect.bottom + gap,
-          window.innerHeight - cardRect.height - gap
-        );
+      : Math.min(rect.bottom + gap, window.innerHeight - cardRect.height - gap);
 
   card.style.left = `${Math.round(left)}px`;
   card.style.top = `${Math.round(top)}px`;

@@ -26,4 +26,3 @@ foundation.
 
 Describe the user-visible behavior, risks, and verification performed. Small,
 focused changes are preferred.
-

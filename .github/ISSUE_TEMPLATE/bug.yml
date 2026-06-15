@@ -33,4 +33,3 @@ body:
       label: toLocal version
     validations:
       required: true
-

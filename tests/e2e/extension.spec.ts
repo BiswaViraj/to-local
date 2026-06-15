@@ -80,16 +80,18 @@ test("reconciles full origins, permissions, frames, and runtime registration", a
     await setOrigin(context, extensionId, "http://localhost:4174", false);
     const serviceWorker = await getServiceWorker(context);
     const state = await serviceWorker.evaluate(async () => {
-      const api = (globalThis as unknown as {
-        chrome: {
-          permissions: {
-            contains(details: { origins: string[] }): Promise<boolean>;
+      const api = (
+        globalThis as unknown as {
+          chrome: {
+            permissions: {
+              contains(details: { origins: string[] }): Promise<boolean>;
+            };
+            scripting: {
+              getRegisteredContentScripts(): Promise<unknown[]>;
+            };
           };
-          scripting: {
-            getRegisteredContentScripts(): Promise<unknown[]>;
-          };
-        };
-      }).chrome;
+        }
+      ).chrome;
 
       return {
         registered: await api.scripting.getRegisteredContentScripts(),
@@ -119,15 +121,17 @@ test("persists registration across a browser restart", async () => {
     await expect
       .poll(async () =>
         serviceWorker.evaluate(async () => {
-          const api = (globalThis as unknown as {
-            chrome: {
-              scripting: {
-                getRegisteredContentScripts(): Promise<
-                  Array<{ id: string; persistAcrossSessions?: boolean }>
-                >;
+          const api = (
+            globalThis as unknown as {
+              chrome: {
+                scripting: {
+                  getRegisteredContentScripts(): Promise<
+                    Array<{ id: string; persistAcrossSessions?: boolean }>
+                  >;
+                };
               };
-            };
-          }).chrome;
+            }
+          ).chrome;
           return api.scripting.getRegisteredContentScripts();
         })
       )
@@ -182,11 +186,9 @@ test("does not scan or wrap a 100,000-line fixture", async () => {
       return {
         elapsed: performance.now() - start,
         longTasks,
-        extensionHosts: document.querySelectorAll("tolocal-overlay")
-          .length,
-        timestampWrappers: document.querySelectorAll(
-          "[data-tolocal-timestamp]"
-        ).length
+        extensionHosts: document.querySelectorAll("tolocal-overlay").length,
+        timestampWrappers: document.querySelectorAll("[data-tolocal-timestamp]")
+          .length
       };
     });
 
@@ -239,8 +241,7 @@ async function launchExtension(userDataDir = ""): Promise<BrowserContext> {
 
 async function getServiceWorker(context: BrowserContext) {
   return (
-    context.serviceWorkers()[0] ??
-    (await context.waitForEvent("serviceworker"))
+    context.serviceWorkers()[0] ?? (await context.waitForEvent("serviceworker"))
   );
 }
 

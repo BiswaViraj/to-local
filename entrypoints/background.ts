@@ -10,10 +10,7 @@ import {
   originToMatchPattern,
   uniqueMatchPatterns
 } from "../src/runtime/origins";
-import {
-  getEnabledOrigins,
-  setEnabledOrigins
-} from "../src/runtime/storage";
+import { getEnabledOrigins, setEnabledOrigins } from "../src/runtime/storage";
 
 export default defineBackground(() => {
   browser.runtime.onInstalled.addListener(() => {

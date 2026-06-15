@@ -1,0 +1,5 @@
+@import "tailwindcss";
+
+/* Design tokens live in src/ui/tokens.css and are imported by each extension
+   page entry alongside this file. Keeping Tailwind's import here lets the
+   content script avoid Tailwind entirely. */

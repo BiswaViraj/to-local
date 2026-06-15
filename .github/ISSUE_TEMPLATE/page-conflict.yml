@@ -24,4 +24,3 @@ body:
       label: Chrome version
     validations:
       required: true
-

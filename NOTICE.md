@@ -12,4 +12,3 @@ Planned font candidates:
 
 Before either font is committed, preserve its exact redistribution license
 text and source provenance in this repository.
-

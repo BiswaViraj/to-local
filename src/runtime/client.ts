@@ -1,8 +1,4 @@
-import type {
-  OriginState,
-  RuntimeRequest,
-  RuntimeResponse
-} from "./contracts";
+import type { OriginState, RuntimeRequest, RuntimeResponse } from "./contracts";
 import { normalizeOrigin, originToMatchPattern } from "./origins";
 
 export async function getActiveTabOrigin(): Promise<string | null> {
@@ -56,4 +52,3 @@ async function sendRuntimeRequest(
 ): Promise<RuntimeResponse> {
   return browser.runtime.sendMessage(request) as Promise<RuntimeResponse>;
 }
-

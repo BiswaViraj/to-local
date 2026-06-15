@@ -37,9 +37,7 @@ async function runAllowedProfile() {
     await target.goto("http://localhost:4173");
     await requestPermission(profile.context, profile.extensionId, "allow");
     await target.reload();
-    await target
-      .locator("tolocal-overlay")
-      .waitFor({ state: "attached" });
+    await target.locator("tolocal-overlay").waitFor({ state: "attached" });
 
     await profile.serviceWorker.evaluate(async () => {
       await chrome.permissions.remove({
@@ -108,13 +106,10 @@ async function waitForRevocation(worker) {
 
   while (Date.now() < deadline) {
     const state = await worker.evaluate(async () => {
-      const stored = await chrome.storage.local.get(
-        "toLocal:enabledOrigins"
-      );
+      const stored = await chrome.storage.local.get("toLocal:enabledOrigins");
       return {
         origins: stored["toLocal:enabledOrigins"] ?? [],
-        registrations:
-          await chrome.scripting.getRegisteredContentScripts()
+        registrations: await chrome.scripting.getRegisteredContentScripts()
       };
     });
     if (state.origins.length === 0 && state.registrations.length === 0) {
