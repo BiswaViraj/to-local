@@ -1,0 +1,69 @@
+/* toLocal design tokens. Colors are OKLCH and theme-aware via light-dark(),
+   following color-scheme. Neutrals are tinted toward the brand amber (hue ~75)
+   for quiet cohesion. Contrast pairs are verified by scripts/check-contrast.mjs. */
+
+:root {
+  color-scheme: light dark;
+
+  /* Surfaces */
+  --surface: light-dark(oklch(0.99 0.004 75), oklch(0.2 0.012 75));
+  --surface-raised: light-dark(oklch(0.975 0.006 75), oklch(0.245 0.015 75));
+  --surface-sunken: light-dark(oklch(0.955 0.008 75), oklch(0.17 0.01 75));
+
+  /* Text */
+  --text: light-dark(oklch(0.27 0.012 75), oklch(0.95 0.01 75));
+  --text-muted: light-dark(oklch(0.48 0.014 75), oklch(0.72 0.012 75));
+
+  /* Lines */
+  --border: light-dark(oklch(0.89 0.008 75), oklch(0.32 0.014 75));
+  --border-strong: light-dark(oklch(0.8 0.01 75), oklch(0.42 0.016 75));
+
+  /* Brand amber: fill, on-fill text, and an AA-safe text/link shade */
+  --accent: light-dark(oklch(0.74 0.15 75), oklch(0.8 0.14 75));
+  --accent-hover: light-dark(oklch(0.69 0.15 74), oklch(0.85 0.13 78));
+  --on-accent: light-dark(oklch(0.24 0.04 75), oklch(0.18 0.03 75));
+  --accent-text: light-dark(oklch(0.52 0.13 64), oklch(0.83 0.13 80));
+
+  /* Status (used sparingly; tinted, never neon) */
+  --positive: light-dark(oklch(0.5 0.12 150), oklch(0.78 0.13 155));
+  --danger: light-dark(oklch(0.52 0.18 25), oklch(0.74 0.16 25));
+
+  /* Focus ring */
+  --ring: light-dark(oklch(0.6 0.16 75), oklch(0.82 0.14 78));
+
+  /* Typography */
+  --font-sans: "Hanken Grotesk", system-ui, sans-serif;
+  --font-mono: "Commit Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --text-xs: 0.75rem; /* 12 */
+  --text-sm: 0.8125rem; /* 13 */
+  --text-base: 0.875rem; /* 14 */
+  --text-md: 1rem; /* 16 */
+  --text-lg: 1.25rem; /* 20 */
+  --text-xl: 1.625rem; /* 26 */
+
+  /* 4pt spacing scale */
+  --space-2xs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+
+  /* Tight radii */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+
+  --shadow-card: 0 8px 24px
+    light-dark(oklch(0.5 0.02 75 / 0.16), oklch(0 0 0 / 0.4));
+}
+
+/* Manual theme overrides flip light-dark() by forcing color-scheme. */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}

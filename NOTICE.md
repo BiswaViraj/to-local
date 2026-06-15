@@ -1,14 +1,18 @@
 # Third-Party Notices
 
-No third-party assets are currently bundled.
+## Bundled fonts
 
-Planned font candidates:
+The following fonts are bundled under `public/fonts/`. Both are licensed under
+the SIL Open Font License 1.1, which permits redistribution within this
+repository and the packaged extension. Their full license texts ship alongside
+the font files.
 
-- Commit Mono, copyright Eigil Nikolajsen, MIT License.
-  Source: https://commitmono.com/
-- General Sans, copyright Indian Type Foundry, Fontshare Free Commercial
-  License.
-  Source: https://www.fontshare.com/fonts/general-sans
+- Commit Mono, copyright Eigil Nikolajsen. SIL Open Font License 1.1.
+  License: `public/fonts/CommitMono-LICENSE.txt`. Source:
+  https://github.com/eigilnikolajsen/commit-mono
+- Hanken Grotesk, copyright The Hanken Grotesk Project Authors. SIL Open Font
+  License 1.1. License: `public/fonts/HankenGrotesk-LICENSE.txt`. Source:
+  https://github.com/marcologous/hanken-grotesk
 
-Before either font is committed, preserve its exact redistribution license
-text and source provenance in this repository.
+General Sans was evaluated but not bundled: the Fontshare Free Font EULA forbids
+redistributing the font files through a public repository.

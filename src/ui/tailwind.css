@@ -1,5 +1,30 @@
 @import "tailwindcss";
+@import "./fonts.css";
+@import "./tokens.css";
 
-/* Design tokens live in src/ui/tokens.css and are imported by each extension
-   page entry alongside this file. Keeping Tailwind's import here lets the
-   content script avoid Tailwind entirely. */
+/* Expose the design tokens as Tailwind theme values so extension pages can use
+   utilities like bg-surface, text-accent, font-mono. The content script never
+   imports this file and so never pulls in Tailwind. */
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-on-accent: var(--on-accent);
+  --color-accent-text: var(--accent-text);
+  --color-positive: var(--positive);
+  --color-danger: var(--danger);
+  --color-ring: var(--ring);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+}

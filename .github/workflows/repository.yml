@@ -43,6 +43,8 @@ jobs:
         run: pnpm format:check
       - name: Typecheck
         run: pnpm typecheck
+      - name: Design token contrast
+        run: pnpm check:contrast
       - name: Unit tests
         run: pnpm test
       - name: Build production extension
