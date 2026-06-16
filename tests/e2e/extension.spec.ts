@@ -107,6 +107,24 @@ test("reconciles full origins, permissions, frames, and runtime registration", a
   }
 });
 
+test("enabling an origin injects into an already-open tab without a reload", async () => {
+  const context = await launchExtension();
+
+  try {
+    const extensionId = await getExtensionId(context);
+    const page = await context.newPage();
+    await page.goto("http://localhost:4173");
+    await expect(page.locator("tolocal-overlay")).toHaveCount(0);
+
+    // Enable while the tab is already open; the overlay must appear with no
+    // reload (Chrome's registration alone would only take effect on next load).
+    await setOrigin(context, extensionId, "http://localhost:4173", true);
+    await expect(page.locator("tolocal-overlay")).toHaveCount(1);
+  } finally {
+    await context.close();
+  }
+});
+
 test("disabling an origin tears down the overlay in an open tab", async () => {
   const context = await launchExtension();
 

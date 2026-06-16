@@ -108,6 +108,12 @@ async function handleRequest(
 
     await reconcileRuntimeState();
 
+    if (request.enabled) {
+      // Registration only injects on the next navigation, so inject into any
+      // already-open tabs of this origin to avoid requiring a reload.
+      await injectIntoOpenTabs(origin);
+    }
+
     return {
       ok: true,
       message: request.enabled ? "Origin enabled." : "Origin disabled."
@@ -118,6 +124,29 @@ async function handleRequest(
       message: error instanceof Error ? error.message : "Unexpected error."
     };
   }
+}
+
+async function injectIntoOpenTabs(origin: string): Promise<void> {
+  const tabs = await browser.tabs.query({});
+  await Promise.all(
+    tabs.map(async (tab) => {
+      if (
+        tab.id === undefined ||
+        !tab.url ||
+        normalizeOrigin(tab.url) !== origin
+      ) {
+        return;
+      }
+      try {
+        await browser.scripting.executeScript({
+          target: { tabId: tab.id, allFrames: true },
+          files: [`/${CONTENT_SCRIPT_FILE}`]
+        });
+      } catch {
+        // Tab may be discarded or disallow injection; the next load covers it.
+      }
+    })
+  );
 }
 
 async function getOriginState(origin: string): Promise<OriginState> {

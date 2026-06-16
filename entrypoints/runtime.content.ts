@@ -58,6 +58,15 @@ export default defineContentScript({
   matchOriginAsFallback: true,
   noScriptStartedPostMessage: true,
   async main(ctx) {
+    // The script can arrive two ways: registered for future loads, or injected
+    // into an already-open tab when an origin is enabled. Guard against both
+    // running in the same frame.
+    const flag = globalThis as { __tolocalActive?: boolean };
+    if (flag.__tolocalActive) {
+      return;
+    }
+    flag.__tolocalActive = true;
+
     const origin = normalizeOrigin(location.origin);
     if (!origin) {
       return;
