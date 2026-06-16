@@ -125,6 +125,54 @@ test("enabling an origin injects into an already-open tab without a reload", asy
   }
 });
 
+test("renders above a max z-index drawer via the top layer", async () => {
+  const context = await launchExtension();
+
+  try {
+    const extensionId = await getExtensionId(context);
+    await setOrigin(context, extensionId, "http://localhost:4173", true);
+    const page = await context.newPage();
+    await page.goto("http://localhost:4173/argocd");
+
+    // Simulate ArgoCD's sliding drawer: a max z-index layer mounted after the
+    // content script, with the timestamp inside it.
+    await page.evaluate(() => {
+      const drawer = document.createElement("div");
+      drawer.id = "drawer";
+      drawer.style.cssText =
+        "position:fixed;inset:0;background:#fff;z-index:2147483647;overflow:auto";
+      document.body.appendChild(drawer);
+      drawer.appendChild(document.getElementById("panel")!);
+      document.getElementById("ts")!.scrollIntoView({ block: "center" });
+    });
+
+    await page.locator("#ts").hover();
+    const host = page.locator("tolocal-overlay");
+    await expect
+      .poll(() =>
+        host.evaluate((h) =>
+          h.shadowRoot!.querySelector(".card")!.matches(":popover-open")
+        )
+      )
+      .toBe(true);
+
+    // The card is the topmost element at its own center, above the drawer.
+    const onTop = await page.evaluate(() => {
+      const h = document.querySelector("tolocal-overlay")!;
+      const c = h.shadowRoot!.querySelector(".card")!.getBoundingClientRect();
+      return (
+        document.elementFromPoint(
+          c.left + c.width / 2,
+          c.top + c.height / 2
+        ) === h
+      );
+    });
+    expect(onTop).toBe(true);
+  } finally {
+    await context.close();
+  }
+});
+
 test("disabling an origin tears down the overlay in an open tab", async () => {
   const context = await launchExtension();
 

@@ -32,6 +32,28 @@ const handleRequest = (request, response) => {
     return;
   }
 
+  if (request.url === "/argocd") {
+    const lines = [];
+    for (let i = 0; i < 60; i++) {
+      lines.push(
+        `  <span style="color:#1a7f37">_field_${i}</span>: <span style="color:#cf222e">${i}</span>,                              wide-trailing-content-to-force-horizontal-scroll-${i}`
+      );
+    }
+    // Timestamp roughly in the middle, inside a colored string span.
+    lines.splice(
+      30,
+      0,
+      `  <span style="color:#1a7f37">date</span>: <span id="ts" style="color:#0a3069">'Mon, 15 Jun 2026 15:07:29 GMT'</span>,`
+    );
+    response.end(
+      page(
+        "Argo logs",
+        `<div id="panel" style="position:fixed;inset:48px;background:#fff;overflow:auto;font:14px/1.5 monospace !important;color:#1f2328;white-space:pre;padding:16px;">{\n${lines.join("\n")}\n}</div>`
+      )
+    );
+    return;
+  }
+
   if (request.url === "/huge") {
     const rows = Array.from(
       { length: 100_000 },

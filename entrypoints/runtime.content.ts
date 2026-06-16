@@ -93,7 +93,10 @@ const OVERLAY_CSS = `
 
   .card {
     position: fixed;
-    display: none;
+    /* Rendered in the top layer via the Popover API so page modals and drawers
+       (even at max z-index) can never cover it. Reset the popover UA defaults. */
+    margin: 0;
+    inset: auto;
     max-width: 360px;
     box-sizing: border-box;
     color-scheme: light dark;
@@ -184,6 +187,7 @@ async function mountOverlay(ctx: ContentScriptContext): Promise<() => void> {
     onMount(container) {
       const card = el("div", "card");
       card.setAttribute("role", "tooltip");
+      card.setAttribute("popover", "manual");
       card.tabIndex = -1;
 
       const local = el("div", "local");
@@ -247,7 +251,9 @@ async function mountOverlay(ctx: ContentScriptContext): Promise<() => void> {
   const hide = (): void => {
     const view = overlay();
     if (view && !pinned) {
-      view.card.style.display = "none";
+      if (view.card.matches(":popover-open")) {
+        view.card.hidePopover();
+      }
       view.card.classList.remove("pinned");
       view.status.textContent = "";
       current = null;
@@ -621,7 +627,9 @@ function getCaretLocation(x: number, y: number): CaretLocation | null {
 // Pixel dimensions throughout so a hostile page root font-size cannot distort
 // the card.
 function positionCard(card: HTMLDivElement, rect: DOMRect): void {
-  card.style.display = "block";
+  if (!card.matches(":popover-open")) {
+    card.showPopover();
+  }
   card.style.left = "0px";
   card.style.top = "0px";
 
