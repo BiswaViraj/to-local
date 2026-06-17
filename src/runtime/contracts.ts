@@ -1,4 +1,3 @@
-export const STORAGE_KEY = "toLocal:enabledOrigins";
 export const CONTENT_SCRIPT_ID = "tolocal-runtime";
 export const CONTENT_SCRIPT_FILE = "content-scripts/runtime.js";
 

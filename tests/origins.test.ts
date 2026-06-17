@@ -33,4 +33,3 @@ describe("origin helpers", () => {
     ).toEqual(["http://localhost/*", "https://example.com/*"]);
   });
 });
-

@@ -1,8 +1,18 @@
 import { defineConfig } from "wxt";
+import tailwindcss from "@tailwindcss/vite";
 
 const isE2eBuild = process.env.TOLOCAL_E2E === "1";
 
 export default defineConfig({
+  // React powers the popup, options, and onboarding pages only. The content
+  // script stays framework-free and is guarded by scripts/check-bundle.mjs.
+  modules: ["@wxt-dev/module-react"],
+  vite: () => ({
+    plugins: [tailwindcss()],
+    define: {
+      __TOLOCAL_E2E__: JSON.stringify(isE2eBuild)
+    }
+  }),
   manifest: {
     name: "toLocal: Local Time for Web Timestamps",
     description:
@@ -11,11 +21,7 @@ export default defineConfig({
     permissions: ["activeTab", "commands", "scripting", "storage"],
     optional_host_permissions: ["http://*/*", "https://*/*"],
     host_permissions: isE2eBuild
-      ? [
-          "http://localhost/*",
-          "http://tolocal.test/*",
-          "https://localhost/*"
-        ]
+      ? ["http://localhost/*", "http://tolocal.test/*", "https://localhost/*"]
       : undefined,
     commands: {
       "convert-selection": {

@@ -80,16 +80,18 @@ test("reconciles full origins, permissions, frames, and runtime registration", a
     await setOrigin(context, extensionId, "http://localhost:4174", false);
     const serviceWorker = await getServiceWorker(context);
     const state = await serviceWorker.evaluate(async () => {
-      const api = (globalThis as unknown as {
-        chrome: {
-          permissions: {
-            contains(details: { origins: string[] }): Promise<boolean>;
+      const api = (
+        globalThis as unknown as {
+          chrome: {
+            permissions: {
+              contains(details: { origins: string[] }): Promise<boolean>;
+            };
+            scripting: {
+              getRegisteredContentScripts(): Promise<unknown[]>;
+            };
           };
-          scripting: {
-            getRegisteredContentScripts(): Promise<unknown[]>;
-          };
-        };
-      }).chrome;
+        }
+      ).chrome;
 
       return {
         registered: await api.scripting.getRegisteredContentScripts(),
@@ -100,6 +102,183 @@ test("reconciles full origins, permissions, frames, and runtime registration", a
     });
     expect(state.registered).toEqual([]);
     expect(state.granted).toBe(true);
+  } finally {
+    await context.close();
+  }
+});
+
+test("enabling an origin injects into an already-open tab without a reload", async () => {
+  const context = await launchExtension();
+
+  try {
+    const extensionId = await getExtensionId(context);
+    const page = await context.newPage();
+    await page.goto("http://localhost:4173");
+    await expect(page.locator("tolocal-overlay")).toHaveCount(0);
+
+    // Enable while the tab is already open; the overlay must appear with no
+    // reload (Chrome's registration alone would only take effect on next load).
+    await setOrigin(context, extensionId, "http://localhost:4173", true);
+    await expect(page.locator("tolocal-overlay")).toHaveCount(1);
+  } finally {
+    await context.close();
+  }
+});
+
+test("renders above a max z-index drawer via the top layer", async () => {
+  const context = await launchExtension();
+
+  try {
+    const extensionId = await getExtensionId(context);
+    await setOrigin(context, extensionId, "http://localhost:4173", true);
+    const page = await context.newPage();
+    await page.goto("http://localhost:4173/argocd");
+
+    // Simulate ArgoCD's sliding drawer: a max z-index layer mounted after the
+    // content script, with the timestamp inside it.
+    await page.evaluate(() => {
+      const drawer = document.createElement("div");
+      drawer.id = "drawer";
+      drawer.style.cssText =
+        "position:fixed;inset:0;background:#fff;z-index:2147483647;overflow:auto";
+      document.body.appendChild(drawer);
+      drawer.appendChild(document.getElementById("panel")!);
+      document.getElementById("ts")!.scrollIntoView({ block: "center" });
+    });
+
+    await page.locator("#ts").hover();
+    const host = page.locator("tolocal-overlay");
+    await expect
+      .poll(() =>
+        host.evaluate((h) =>
+          h.shadowRoot!.querySelector(".card")!.matches(":popover-open")
+        )
+      )
+      .toBe(true);
+
+    // The card is the topmost element at its own center, above the drawer.
+    const onTop = await page.evaluate(() => {
+      const h = document.querySelector("tolocal-overlay")!;
+      const c = h.shadowRoot!.querySelector(".card")!.getBoundingClientRect();
+      return (
+        document.elementFromPoint(
+          c.left + c.width / 2,
+          c.top + c.height / 2
+        ) === h
+      );
+    });
+    expect(onTop).toBe(true);
+  } finally {
+    await context.close();
+  }
+});
+
+test("disabling an origin tears down the overlay in an open tab", async () => {
+  const context = await launchExtension();
+
+  try {
+    const extensionId = await getExtensionId(context);
+    await setOrigin(context, extensionId, "http://localhost:4173", true);
+
+    const page = await context.newPage();
+    await page.goto("http://localhost:4173");
+    await expect(page.locator("tolocal-overlay")).toHaveCount(1);
+
+    // Disabling from the popup must deactivate the open tab with no reload.
+    await setOrigin(context, extensionId, "http://localhost:4173", false);
+    await expect(page.locator("tolocal-overlay")).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});
+
+test("detects split timestamps, <time> elements, and the nearest match", async () => {
+  const context = await launchExtension();
+
+  try {
+    const extensionId = await getExtensionId(context);
+    await setOrigin(context, extensionId, "http://localhost:4173", true);
+    const page = await context.newPage();
+    await page.goto("http://localhost:4173/semantic");
+    await expect(page.locator("tolocal-overlay")).toHaveCount(1);
+
+    const cardText = () =>
+      page.locator("tolocal-overlay").evaluate((host) => {
+        const card = host.shadowRoot?.querySelector(".card");
+        return getComputedStyle(card!).display === "none"
+          ? ""
+          : (card?.querySelector(".source-value")?.textContent ?? "");
+      });
+
+    // Rows are spaced far apart in the fixture so the card shown for one hover
+    // never sits under the next teleported hover target.
+
+    // Split across two spans, reconstructed into one value.
+    await page.locator("#split-b").hover();
+    await expect.poll(cardText).toBe("2026-06-15T08:42:11Z");
+
+    // <time datetime> wins over the visible "2 hours ago" label.
+    await page.locator("#time-el").hover();
+    await expect.poll(cardText).toBe("2026-03-08T07:00:00Z");
+
+    // Nearest of two timestamps on one line.
+    await page.locator("#multi-second").hover();
+    await expect.poll(cardText).toBe("2026-06-15T09:30:00Z");
+  } finally {
+    await context.close();
+  }
+});
+
+test("converts the current selection into a pinned card", async () => {
+  const context = await launchExtension();
+
+  try {
+    const extensionId = await getExtensionId(context);
+    await setOrigin(context, extensionId, "http://localhost:4173", true);
+    const page = await context.newPage();
+    await page.goto("http://localhost:4173");
+    await expect(page.locator("tolocal-overlay")).toHaveCount(1);
+
+    await page.evaluate(() => {
+      const node = document.getElementById("top-timestamp")!;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const selection = window.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+    });
+
+    // Drive the same message the Ctrl/Cmd+Shift+L command dispatches.
+    const worker = await getServiceWorker(context);
+    await worker.evaluate(async () => {
+      const api = (
+        globalThis as unknown as {
+          chrome: {
+            tabs: {
+              query(q: object): Promise<Array<{ id?: number; url?: string }>>;
+              sendMessage(id: number, message: unknown): Promise<void>;
+            };
+          };
+        }
+      ).chrome;
+      const tabs = await api.tabs.query({});
+      const tab = tabs.find((t) => t.url?.includes("localhost:4173"));
+      if (tab?.id !== undefined) {
+        await api.tabs.sendMessage(tab.id, { type: "convert-selection" });
+      }
+    });
+
+    const host = page.locator("tolocal-overlay");
+    await expect
+      .poll(() =>
+        host.evaluate(
+          (h) => h.shadowRoot?.querySelector(".source-value")?.textContent ?? ""
+        )
+      )
+      .toBe("2026-06-15T08:42:11.123456789Z");
+    // The converted local time is shown and the card is pinned with actions.
+    await expect(host.locator(".local")).not.toBeEmpty();
+    await expect(host.locator(".copy").first()).toBeVisible();
   } finally {
     await context.close();
   }
@@ -119,15 +298,17 @@ test("persists registration across a browser restart", async () => {
     await expect
       .poll(async () =>
         serviceWorker.evaluate(async () => {
-          const api = (globalThis as unknown as {
-            chrome: {
-              scripting: {
-                getRegisteredContentScripts(): Promise<
-                  Array<{ id: string; persistAcrossSessions?: boolean }>
-                >;
+          const api = (
+            globalThis as unknown as {
+              chrome: {
+                scripting: {
+                  getRegisteredContentScripts(): Promise<
+                    Array<{ id: string; persistAcrossSessions?: boolean }>
+                  >;
+                };
               };
-            };
-          }).chrome;
+            }
+          ).chrome;
           return api.scripting.getRegisteredContentScripts();
         })
       )
@@ -182,11 +363,9 @@ test("does not scan or wrap a 100,000-line fixture", async () => {
       return {
         elapsed: performance.now() - start,
         longTasks,
-        extensionHosts: document.querySelectorAll("tolocal-overlay")
-          .length,
-        timestampWrappers: document.querySelectorAll(
-          "[data-tolocal-timestamp]"
-        ).length
+        extensionHosts: document.querySelectorAll("tolocal-overlay").length,
+        timestampWrappers: document.querySelectorAll("[data-tolocal-timestamp]")
+          .length
       };
     });
 
@@ -216,13 +395,98 @@ for (const origin of [
 
       const host = page.locator("tolocal-overlay");
       await expect(host).toHaveCount(1);
-      await host.locator(".copy").click();
+      // Copy actions appear once the card is pinned by clicking it.
+      await host.locator(".card").click();
+      await host.locator(".copy").first().click();
       await expect(host.locator(".status")).toContainText(/Copied/);
     } finally {
       await context.close();
     }
   });
 }
+
+test("options page persists preferences and manages origins", async () => {
+  const context = await launchExtension();
+
+  try {
+    const extensionId = await getExtensionId(context);
+    // Enable an origin through the working popup flow so the options page has a
+    // site to list and remove.
+    await setOrigin(context, extensionId, "http://localhost:4173", true);
+
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/options.html`);
+
+    await page.getByRole("button", { name: "Dark" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+    await page.getByRole("button", { name: "Fixed zone" }).click();
+    await page.getByLabel("Search timezones").fill("Tokyo");
+    await page.getByRole("button", { name: /Asia\/Tokyo/ }).click();
+
+    // Preferences survive a reload.
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Dark" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    await expect(
+      page.getByRole("button", { name: "Fixed zone" })
+    ).toHaveAttribute("aria-pressed", "true");
+
+    // Reject an invalid origin.
+    await page.getByLabel("Add an origin").fill("not a url");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(page.getByText(/full http\(s\) origin/)).toBeVisible();
+
+    // The enabled origin is listed and can be removed.
+    await expect(
+      page.getByText("http://localhost:4173", { exact: true })
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Remove" }).click();
+    await expect(
+      page.getByText("http://localhost:4173", { exact: true })
+    ).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});
+
+test("onboarding converts samples and remembers completion", async () => {
+  const context = await launchExtension();
+
+  try {
+    const extensionId = await getExtensionId(context);
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/onboarding.html`);
+
+    await page.getByRole("button", { name: "2026-06-15T08:42:11Z" }).click();
+    await expect(page.getByRole("button", { name: "Copy ISO" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Got it" }).click();
+
+    const worker = await getServiceWorker(context);
+    const completed = await worker.evaluate(async () => {
+      const api = (
+        globalThis as unknown as {
+          chrome: {
+            storage: {
+              local: { get(key: string): Promise<Record<string, unknown>> };
+            };
+          };
+        }
+      ).chrome;
+      const stored = await api.storage.local.get("toLocal:state");
+      const state = stored["toLocal:state"] as {
+        onboarding?: { completed?: boolean };
+      };
+      return state?.onboarding?.completed;
+    });
+    expect(completed).toBe(true);
+  } finally {
+    await context.close();
+  }
+});
 
 async function launchExtension(userDataDir = ""): Promise<BrowserContext> {
   return chromium.launchPersistentContext(userDataDir, {
@@ -239,8 +503,7 @@ async function launchExtension(userDataDir = ""): Promise<BrowserContext> {
 
 async function getServiceWorker(context: BrowserContext) {
   return (
-    context.serviceWorkers()[0] ??
-    (await context.waitForEvent("serviceworker"))
+    context.serviceWorkers()[0] ?? (await context.waitForEvent("serviceworker"))
   );
 }
 

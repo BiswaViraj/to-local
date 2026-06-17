@@ -1,27 +1,19 @@
-import { STORAGE_KEY } from "./contracts";
+import { loadState, updateState } from "../storage/state";
 import { normalizeOrigin } from "./origins";
 
 export async function getEnabledOrigins(): Promise<string[]> {
-  const stored = await browser.storage.local.get(STORAGE_KEY);
-  const values = stored[STORAGE_KEY];
+  const state = await loadState();
+  return state.enabledOrigins;
+}
 
-  if (!Array.isArray(values)) {
-    return [];
-  }
-
-  return [
+export async function setEnabledOrigins(origins: string[]): Promise<void> {
+  const normalized = [
     ...new Set(
-      values
-        .filter((value): value is string => typeof value === "string")
+      origins
         .map(normalizeOrigin)
         .filter((value): value is string => value !== null)
     )
   ].sort();
-}
 
-export async function setEnabledOrigins(origins: string[]): Promise<void> {
-  await browser.storage.local.set({
-    [STORAGE_KEY]: [...new Set(origins)].sort()
-  });
+  await updateState((state) => ({ ...state, enabledOrigins: normalized }));
 }
-

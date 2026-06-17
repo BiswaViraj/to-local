@@ -10,14 +10,18 @@ import {
   originToMatchPattern,
   uniqueMatchPatterns
 } from "../src/runtime/origins";
-import {
-  getEnabledOrigins,
-  setEnabledOrigins
-} from "../src/runtime/storage";
+import { getEnabledOrigins, setEnabledOrigins } from "../src/runtime/storage";
+
+declare const __TOLOCAL_E2E__: boolean;
 
 export default defineBackground(() => {
-  browser.runtime.onInstalled.addListener(() => {
+  browser.runtime.onInstalled.addListener((details) => {
     void reconcileRuntimeState();
+    if (details.reason === "install" && !__TOLOCAL_E2E__) {
+      void browser.tabs.create({
+        url: browser.runtime.getURL("/onboarding.html")
+      });
+    }
   });
 
   browser.runtime.onStartup.addListener(() => {
@@ -43,8 +47,31 @@ export default defineBackground(() => {
     }
   );
 
+  // The keyboard command converts the current selection. Forward it to the
+  // active tab; the frame that holds the selection acts, the rest ignore it.
+  browser.commands.onCommand.addListener((command) => {
+    if (command === "convert-selection") {
+      void forwardConvertSelection();
+    }
+  });
+
   void reconcileRuntimeState();
 });
+
+async function forwardConvertSelection(): Promise<void> {
+  const [tab] = await browser.tabs.query({
+    active: true,
+    currentWindow: true
+  });
+  if (tab?.id === undefined) {
+    return;
+  }
+  try {
+    await browser.tabs.sendMessage(tab.id, { type: "convert-selection" });
+  } catch {
+    // No content script on this tab (origin not enabled). Nothing to do.
+  }
+}
 
 async function handleRequest(
   request: RuntimeRequest
@@ -81,11 +108,15 @@ async function handleRequest(
 
     await reconcileRuntimeState();
 
+    if (request.enabled) {
+      // Registration only injects on the next navigation, so inject into any
+      // already-open tabs of this origin to avoid requiring a reload.
+      await injectIntoOpenTabs(origin);
+    }
+
     return {
       ok: true,
-      message: request.enabled
-        ? "Origin enabled. Reload open pages to exercise persistent injection."
-        : "Origin disabled."
+      message: request.enabled ? "Origin enabled." : "Origin disabled."
     };
   } catch (error) {
     return {
@@ -93,6 +124,29 @@ async function handleRequest(
       message: error instanceof Error ? error.message : "Unexpected error."
     };
   }
+}
+
+async function injectIntoOpenTabs(origin: string): Promise<void> {
+  const tabs = await browser.tabs.query({});
+  await Promise.all(
+    tabs.map(async (tab) => {
+      if (
+        tab.id === undefined ||
+        !tab.url ||
+        normalizeOrigin(tab.url) !== origin
+      ) {
+        return;
+      }
+      try {
+        await browser.scripting.executeScript({
+          target: { tabId: tab.id, allFrames: true },
+          files: [`/${CONTENT_SCRIPT_FILE}`]
+        });
+      } catch {
+        // Tab may be discarded or disallow injection; the next load covers it.
+      }
+    })
+  );
 }
 
 async function getOriginState(origin: string): Promise<OriginState> {

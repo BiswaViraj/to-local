@@ -37,11 +37,23 @@ jobs:
           fi
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
+      - name: Lint
+        run: pnpm lint
+      - name: Format check
+        run: pnpm format:check
       - name: Typecheck
         run: pnpm typecheck
+      - name: Design token contrast
+        run: pnpm check:contrast
       - name: Unit tests
         run: pnpm test
       - name: Build production extension
         run: pnpm build
+      - name: Content-script bundle budget
+        run: pnpm check:bundle
+      - name: Production build hygiene
+        run: pnpm check:dist
       - name: Browser tests
         run: pnpm test:e2e
+      - name: Package extension
+        run: pnpm zip

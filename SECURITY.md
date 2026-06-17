@@ -17,4 +17,3 @@ Include:
 - Any suggested mitigation.
 
 Do not include sensitive page content, credentials, or private URLs.
-

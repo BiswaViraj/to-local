@@ -18,6 +18,42 @@ const handleRequest = (request, response) => {
     return;
   }
 
+  if (request.url === "/semantic") {
+    response.end(
+      page(
+        "Semantic",
+        `
+          <p class="log-row spaced">split <span id="split-a">2026-06-15</span><span id="split-b">T08:42:11Z</span> done</p>
+          <p class="log-row spaced">relative <time id="time-el" datetime="2026-03-08T07:00:00Z">2 hours ago</time></p>
+          <p class="log-row spaced" id="multi-row">a <span id="multi-first">2026-06-15T08:00:00Z</span> b <span id="multi-second">2026-06-15T09:30:00Z</span> c</p>
+        `
+      )
+    );
+    return;
+  }
+
+  if (request.url === "/argocd") {
+    const lines = [];
+    for (let i = 0; i < 60; i++) {
+      lines.push(
+        `  <span style="color:#1a7f37">_field_${i}</span>: <span style="color:#cf222e">${i}</span>,                              wide-trailing-content-to-force-horizontal-scroll-${i}`
+      );
+    }
+    // Timestamp roughly in the middle, inside a colored string span.
+    lines.splice(
+      30,
+      0,
+      `  <span style="color:#1a7f37">date</span>: <span id="ts" style="color:#0a3069">'Mon, 15 Jun 2026 15:07:29 GMT'</span>,`
+    );
+    response.end(
+      page(
+        "Argo logs",
+        `<div id="panel" style="position:fixed;inset:48px;background:#fff;overflow:auto;font:14px/1.5 monospace !important;color:#1f2328;white-space:pre;padding:16px;">{\n${lines.join("\n")}\n}</div>`
+      )
+    );
+    return;
+  }
+
   if (request.url === "/huge") {
     const rows = Array.from(
       { length: 100_000 },
@@ -78,6 +114,7 @@ function page(title, body) {
           * { box-sizing: border-box; color: rebeccapurple; font-family: serif !important; }
           body { margin: 40px; font-size: 48px; }
           .log-row, .row { color: #1b261f; font: 14px/1.5 monospace !important; }
+          .spaced { margin: 0 0 220px; }
           iframe { display: block; width: 720px; height: 160px; margin-top: 24px; }
         </style>
       </head>
